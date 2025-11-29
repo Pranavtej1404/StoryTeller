@@ -1,66 +1,107 @@
+// app/story/[id]/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function StoryPage({ params }: { params: { id: string } }) {
   const storyId = params.id;
-  const [scenes, setScenes] = useState([{
-    id:"",content: "",sequenece:0,choices:[],choice:""
-  }]);
-  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  async function load() {
-    const res = await fetch(`/api/story/${storyId}`);
-    const data = await res.json();
-    setScenes(data.scenes || []);
-  }
+  const [story, setStory] = useState<any>(null);
+  const [scenes, setScenes] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
-    load();
-  }, []);
+    async function loadStory() {
+      const res = await fetch(`/api/story/${storyId}`);
+      const data = await res.json();
 
-  async function generateNext(choice: string) {
-    setLoading(true);
+      setStory(data.story);
+      setScenes(data.scenes);
+    }
 
-    const previousScene = scenes[scenes.length - 1]?.content;
+    loadStory();
+  }, [storyId]);
 
-    const res = await fetch("/api/story/scene", {
-      method: "POST",
-      body: JSON.stringify({ storyId, previousScene, choice }),
-    });
-
-    const data = await res.json();
-    setScenes((prev) => [...prev, { id: data.id,content: data.scene, choices: data.choices, sequenece:data.seq, choice:data.choice }]);
-    setLoading(false);
-  }
+  if (!story) return <p className="p-6 text-gray-300">Loading story...</p>;
 
   return (
-    <div className="w-full p-6 max-w-2xl mx-auto space-y-4">
-      <h1 className="text-2xl font-bold">Your Story</h1>
+    <div className="min-h-screen p-6 text-gray-100 bg-[#0a0a0c]">
 
-      {scenes.map((s, i) => (
-        <div key={i} className="bg-neutral-900 p-4 rounded-xl border border-neutral-700">
-          <p className="whitespace-pre-wrap">{s.content}</p>
+      {/* --- Header with History Icon --- */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">{story.title}</h1>
 
-          {/* Show choices only for last scene */}
-          {i === scenes.length - 1 && s.choices && (
-            <div className="mt-3 space-y-2">
-              {s.choices.map((c: string, idx: number) => (
+        <button
+          onClick={() => setShowHistory(true)}
+          className="text-lg px-4 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition"
+        >
+          🕘 History
+        </button>
+      </div>
+
+      {/* --- Show latest scene --- */}
+      <div className="bg-gray-900 p-5 rounded-xl shadow-lg">
+        <p className="whitespace-pre-line text-lg leading-relaxed">
+          {scenes[scenes.length - 1]?.content}
+        </p>
+      </div>
+
+      {/* --- Choices --- */}
+      {scenes[scenes.length - 1]?.choices?.length > 0 && (
+        <div className="mt-4 space-y-3">
+          {scenes[scenes.length - 1].choices.map((c: string, idx: number) => (
+            <button
+              key={idx}
+              onClick={() => router.push(`/play/${storyId}?choice=${idx}`)}
+              className="w-full p-3 bg-blue-700 rounded-lg hover:bg-blue-600"
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* --- History Modal --- */}
+      {showHistory && (
+        <div className="fixed inset-0 bg-black/60 flex justify-center items-center">
+          <div className="bg-gray-900 p-6 rounded-xl w-[90%] max-w-lg">
+            <h2 className="text-2xl mb-4 font-semibold">Story History</h2>
+
+            <div className="max-h-96 overflow-y-auto space-y-3">
+              {scenes.map((scene, idx) => (
                 <button
-                  key={idx}
-                  onClick={() => generateNext(c)}
-                  disabled={loading}
-                  className="w-full bg-neutral-800 hover:bg-neutral-700 rounded-lg px-4 py-2 text-left border border-neutral-600"
+                  key={scene.id}
+                  onClick={() => {
+                    setShowHistory(false);
+                    const el = document.getElementById(`scene-${scene.id}`);
+                    el?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                  className="w-full text-left p-3 bg-gray-800 rounded-lg hover:bg-gray-700"
                 >
-                  {c}
+                  <p className="font-semibold">Scene {idx + 1}</p>
+                  <p className="text-sm line-clamp-2">{scene.content}</p>
                 </button>
               ))}
             </div>
-          )}
-        </div>
-      ))}
 
-      {loading && <p>Generating next scene...</p>}
+            <button
+              className="mt-4 w-full bg-red-700 py-2 rounded-lg"
+              onClick={() => setShowHistory(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* --- Invisible anchors for scene jumping --- */}
+      <div className="hidden">
+        {scenes.map((s) => (
+          <div key={s.id} id={`scene-${s.id}`}></div>
+        ))}
+      </div>
     </div>
   );
 }

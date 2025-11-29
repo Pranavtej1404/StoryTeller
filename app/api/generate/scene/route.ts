@@ -1,50 +1,60 @@
 import { NextResponse } from "next/server";
 import db from "@/db/database";
-import { v4 as uuid } from "uuid";
 import { generateSceneAI } from "@/lib/generateScene";
+import { v4 as uuid } from "uuid";
 
 export async function POST(req: Request) {
   try {
-    const { storyId, previousScene, choice } = await req.json();
+    const {
+      storyId,
+      title,
+      genre,
+      characters,
+      previousScene,
+      choice,
+    } = await req.json();
 
-    if (!storyId) {
-      return NextResponse.json({ error: "storyId required" }, { status: 400 });
+    if (!title || !genre || !characters) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
-    const story = db.prepare("SELECT * FROM stories WHERE id = ?").get(storyId);
-    const chars = db
-      .prepare("SELECT name FROM characters WHERE story_id = ?")
-      .all(storyId)
-      .map((c: any) => c.name);
-
-    const aiResult = await generateSceneAI({
-      title: story.title,
-      genre: story.genre,
-      characters: chars,
+    // Generate the scene
+    const { scene, choices } = await generateSceneAI({
+      title,
+      genre,
+      characters,
       previousScene,
       choice,
     });
 
-    const sceneId = uuid();
+    // If storyId exists → store next scene
+    if (storyId) {
+      const id = uuid();
+      const seq =
+        db.prepare("SELECT COUNT(*) AS count FROM scenes WHERE storyId = ?")
+          .get(storyId).count + 1;
 
-    const sceneCount = db
-      .prepare("SELECT COUNT(*) as c FROM scenes WHERE story_id = ?")
-      .get(storyId).c;
+      db.prepare(`
+        INSERT INTO scenes (id, storyId, content, sequence, choice, choices)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        storyId,
+        scene,
+        seq,
+        choice || null,
+        JSON.stringify(choices)
+      );
+    }
 
-    db.prepare(
-      `INSERT INTO scenes (id, story_id, content, scene_number)
-       VALUES (?, ?, ?, ?)`
-    ).run(sceneId, storyId, aiResult.scene, sceneCount + 1);
-
-    return NextResponse.json({
-      scene: aiResult.scene,
-      choices: aiResult.choices,
-      sceneId,
-    });
-  } catch (error) {
-    console.error("Scene generation error:", error);
+    return NextResponse.json({ scene, choices });
+  } catch (err) {
+    console.error(err);
     return NextResponse.json(
-      { error: "Scene generation failed" },
+      { error: "Failed to generate scene" },
       { status: 500 }
     );
   }
